@@ -1,0 +1,511 @@
+---
+title: "Limpieza de base de datos de accidentes del 2009 al 2017"
+output: html_notebook
+author: Juan Andrés García, Marlon Hernández, Paolo Marsicovetere
+---
+
+#Descarga de Bases de datos
+###Librerias empleadas
+```{r, echo = TRUE}
+library(readxl)
+library(foreign)
+library(haven)
+```
+
+
+###leer tablas xlsx
+```{r, echo = TRUE}
+tablas <- list.files(pattern = ".xlsx")
+for (k in 1:(length(tablas))){
+  #cargar tablas de datos crudos
+  nombre <- tablas[k]
+  tabla <- read_xlsx(nombre, col_names = TRUE)
+  nombre<-gsub('.{4}$', '', nombre)
+  assign(paste(nombre), tabla)
+}
+```
+
+###leer tablas sav
+```{r, echo = TRUE}
+tablas <- list.files(pattern = ".sav")
+for (k in 1:(length(tablas))){
+  #cargar tablas de datos crudos
+  nombre <- tablas[k]
+  tabla <- read_sav(nombre)
+  nombre<-gsub('.{4}$', '', nombre)
+  assign(paste(nombre), tabla)
+}
+```
+
+#Análisis de los datos crudos:
+
+###General:
+Se tiene que la mayor parte de tablas son consistentes en sus datos y no es necesario hacer cambios grandes para ajustar todos los archivos a la misma estructura. Además, se tiene que en algunos años las categorías Fallecidos y Lesionados están separadas, por lo que resulta necesario juntarlas en una sola y algunos años no cuentan con datos sobre Vehículos Involucrados. 
+Al revisar el diccionario de variables de cada base de datos, se encuentra que todas las variables son de un mismo tipo (numérico)  y que suelen ser congruentes entre sí, fuera de pequeños nombres de las variables, sus valoraciones y algunas categorias ausentes entre año y año. Es necesario cambiar como valores en factores todos los números para colocarlos como palabras entendibles, con la ayuda del diccionario, esto resultará en un mejor análisis y una presentación de resultados más entendible. 
+Al revisar las distintas categorías en un mismo año de (Fallecidos y Lesionados, Vehículos Involucrados y Detalle de los Hechos), se observa una disparidad entre la cantidad de ocurrencias. Esto nos indica que no se pueden relacionar las 3 categorías simplimente ni unirse en una sola tabla sin antes haber profundizado en la relación que tienen entre ellas. 
+Por lo tanto, se decide que se tendrá tres tablas de datos, una para Hechos de transito, otra de Fallecidos y Lesionados y otra de Vehículos involucrados -cada una con la información de los 8 años- y de ellas se harán los debidos análisis.
+
+###Fallecidos y Lesionados
+La mayor parte de datos por año contienen la misma información pero con diferente nombre de variable, tambíen se tiene que los primeros años 2009 a 2012 no incluyeron información completa del vehículo. Para lograr unir todos los años se empezó por definir las variables de más importancia para todos los años y eso se extrajo de cada año para unificar todos los años. Con los datos de 2009 se tienen dos tablas, una para fallecidos y una para lesionados, el cual se escogió tomar el dato de fallecidos como más importante en caso de que fueran distintos, si en el caso de existir solo lesionados o fallecidos se tomaron los valores de este. Todos los datos poseen un id de correlativo excepto para el año 2010, el cual se le asignó uno por orden de tabla. El año 2014 tiene id propio, id2 y de base de datos, para el cúal se optó por el tomar el de base de datos. Finalmente se tiene que existen diferentes niveles en algunas variables, la cuál amplía la información para ciertos años.
+
+###Hechos de tránsito
+Se encuentra que la mayoría de variables se repite en cada año, solo con leves diferencias en su nomenclatura. Al revisar los datos y el (incierto) diccionario de variables, se logra determinar que los valores empleados son lo mismo, por lo que basta cambiar de nombre a las variables para que se puedan unir entre años. 
+Cabe a mencionar que los diccionarios para los año 2009-2013 son el mismo a pesar de que las bases de datos de cada año tienen variables y nombres contrastantes. Igual sucede con el diccionario de los años 2014-2015 y el diccionario del año 2016-2017.
+Puntualmente, algunas observaciones respecto las variables encontradas:
+-num_hecho (id): 2010 no posee un id por incidente.
+-corre_base: 2014 tiene un segundo numero correlativo base que los demás años no poseen. 
+-g_hora_5: 2015, 2016, 2017 tienen una agrupación adicional de hora de incidente. No está descrito en diccionario.
+-municipios: 2009, 2010. no tienen municipio descrito. 2011 tiene municipios, pero no están descritos en diccionario y es una valoración contrastante a la de 2012-2017, por lo que se omite.
+-area_geog_ocu: 2017 no posee información.
+-información del pilot: 2016-2017 no tienen informacion de piloto
+-g_edad: Los años de 2014-2015 agregan una segunda y tercera categoría de agrupacón de pilotos por año, llegando a 60años y 80 años respectivamente. Para reducir redundancia, se decide crear una sola escala de agrupación de edades que llegue hasta los 80 años.
+-edad_quinquenales: El año 2015 agrega esta variable - que no está descrita en diccionario.
+-marca_vehículo: 2009, 2010 y 2012 no poseen.
+-modelo_vehículo: 2012 no posee.
+
+
+###Vehículos Involucrados
+
+
+
+#Cambios Realizados
+###Cambios en Fallecidos y Lesionados
+```{r}
+`Fallecidos y Lesionados 2009`<-merge(`Fallecidos 2009`, `Lesionados 2009`, by="num_hecho", all = T,  suffixes = c(".fallecidos",".lesionados"))
+cols[[4]]<-colnames(`Fallecidos y Lesionados 2009`)
+cols[10]<-NULL
+
+nms<-c("num_hecho","día","mes","año","hora","día semana","edad","sexo","departamento","municipio","zona","área geográfica",
+       "tipo vehículo","marca vehículo","color vehículo","modelo vehículo",
+       "tipo evento", "fallecidos o lesionados", "internado")
+
+# Fallecidos y Lesionados 2009
+FL09<-data.frame()
+for(i in 1:nrow(`Fallecidos y Lesionados 2009`)){
+  x<-as.data.frame(`Fallecidos y Lesionados 2009`)
+  
+  #checkear for NAs 
+  
+  # a1 dia
+  if(is.na(x$dia_ocu.lesionados[i])){
+    a1<-x$dia_ocu.fallecidos[i]
+  }else{
+    a1<-x$dia_ocu.lesionados[i]
+  }
+  # a2 mes
+  if(is.na(x$mes_ocu.lesionados[i])){
+    a2<-x$mes_ocu.fallecidos[i]
+  }else{
+    a2<-x$mes_ocu.lesionados[i]
+  }
+  # a3 dia semana
+  if(is.na(x$dia_sem_ocu.lesionados[i])){
+    a3<-x$dia_sem_ocu.fallecidos[i]
+  }else{
+    a3<-x$dia_sem_ocu.lesionados[i]
+  }
+  # a4 hora
+  if(is.na(x$hora_ocu.lesionados[i])){
+    a4<-x$hora_ocu.fallecidos[i]
+  }else{
+    a4<-x$hora_ocu.lesionados[i]
+  }
+  # a5 sexo
+  if(is.na(x$sexo_les[i])){
+    a5<-x$sexo_pil[i]
+  }else{
+    a5<-x$sexo_les[i]
+  }
+  # a6 edad
+  if(is.na(x$edad_les[i])){
+    a6<-as.numeric(x$edad_fall[i])
+  }else{
+    a6<-as.numeric(x$edad_les[i])
+  }
+  # a7 departamento
+  if(is.na(x$depto_ocu.lesionados[i])){
+    a7<-x$depto_ocu.fallecidos[i]
+  }else{
+    a7<-x$depto_ocu.lesionados[i]
+  }
+  # a13 area geografica
+  if(is.na(x$areag_ocu.lesionados[i])){
+    a13<-x$areag_ocu.fallecidos[i]
+  }else{
+    a13<-x$areag_ocu.lesionados[i]
+  }
+  # a8 tipo vehículo
+  if(is.na(x$tipo_vehi.lesionados[i])){
+    a8<-as.numericx$tipo_vehi.fallecidos[i]
+  }else{
+    a8<-x$tipo_vehi.lesionados[i]
+  }
+  # a9 modelo vehículo
+  if(is.na(x$modelo_vehi.lesionados[i])){
+    a9<-x$modelo_vehi.fallecidos[i]
+  }else{
+    a9<-x$modelo_vehi.lesionados[i]
+  }
+  # a10 color vehículo
+  if(is.na(x$color_vehi.lesionados[i])){
+    a10<-x$color_vehi.fallecidos[i]
+  }else{
+    a10<-x$color_vehi.lesionados[i]
+  }
+  # a11 tipo evento
+  if(is.na(x$causa_acc.lesionados[i])){
+    a11<-x$causa_acc.fallecidos[i]
+  }else{
+    a11<-x$causa_acc.lesionados[i]
+  }
+  # a12 fallecidos o lesionados
+  if(is.na(x$sexo_pil[i])){
+    a12<-2
+  }else{
+    a12<-1
+  }
+  
+  
+  y<-data.frame(x$num_hecho[i],a1,a2,"2017",a4,a3,a6,a5,a7,NA,NA,a13,
+                a8,NA,a9,a10,
+                a11,a12,NA)
+  FL09<-rbind(FL09,y)
+}
+names(FL09)<-nms
+
+# Fallecidos y Lesionados 2010
+FL10<-data.frame()
+for(i in 1:nrow(`Fallecidos y Lesionados 2010`)){
+  x<-as.data.frame(`Fallecidos y Lesionados 2010`)
+  
+  y<-data.frame(paste(i,"10",sep = ""),x$dia_ocu[i],x$mes_ocu[i],"2010",x$hora_ocu[i],x$dia_sem_ocu[i],x$edad_fall_les[i],x$sexo_fall_les[i],x$depto_ocu[i],NA,x$zona_ocu[i],x$areag_ocu[i],
+                x$tipo_vehi[i],NA,NA,NA,
+                x$Causa_acc[i],x$lesio_fall[i],NA)
+  FL10<-rbind(FL10,y)
+}
+names(FL10)<-nms
+
+# Fallecidos y Lesionados 2011
+FL11<-data.frame()
+for(i in 1:nrow(`Fallecidos y Lesionados 2011`)){
+  x<-as.data.frame(`Fallecidos y Lesionados 2011`)
+  
+  y<-data.frame(x$num_hecho[i],x$dia_ocu[i],x$mes_ocu[i],"2011",x$hora_ocu[i],x$dia_sem_ocu[i],x$edad_pil[i],x$sexo_pil[i],x$depto_ocu[i],x$muni_ocu[i],x$zona_ocu[i],x$areag_ocu[i],
+                x$tipo_vehi[i],x$marca_vehi[i],x$marca_vehi[i],x$color_vehi[i],
+                x$causa_acc[i],x$condicion_pil[i],NA)
+  FL11<-rbind(FL11,y)
+}
+names(FL11)<-nms
+
+# Fallecidos y Lesionados 2012
+FL12<-data.frame()
+for(i in 1:nrow(`Fallecidos y Lesionados 2012`)){
+  x<-as.data.frame(`Fallecidos y Lesionados 2012`)
+  
+  y<-data.frame(x$num_hecho[i],x$dia_ocu[i],x$mes_ocu[i],"2012",x$hora_ocu[i],x$dia_sem_ocu[i],x$edad_fall_les[i],x$sexo_fall_les[i],x$depto_ocu[i],x$mupio_ocu[i],x$zona_ocu[i],x$areag_ocu[i],
+                x$tipo_vehi[i],NA,x$color_vehi[i],NA,
+                x$casusa_acc[i],x$estado_implicado[i],NA)
+  FL12<-rbind(FL12,y)
+}
+names(FL12)<-nms
+
+# Fallecidos y Lesionados 2013
+FL13<-data.frame()
+for(i in 1:nrow(`Fallecidos y Lesionados 2013`)){
+  x<-as.data.frame(`Fallecidos y Lesionados 2013`)
+  
+  y<-data.frame(x$num_hecho[i],x$dia_ocu[i],x$mes_ocu[i],"2013",x$hora_ocu[i],x$dia_sem_ocu[i],x$sexo_pil[i],x$sexo_pil[i],x$depto_ocu[i],x$mupio_ocu[i],x$zona_ocu[i],x$areag_ocu[i],
+                x$tipo_veh[i],x$marca_veh[i],x$color_veh[i],x$color_veh[i],
+                x$causa_acc[i],x$Fallecidos_Lesionados[i],NA)
+  FL13<-rbind(FL13,y)
+}
+names(FL13)<-nms
+
+# Fallecidos y Lesionados 2014
+FL14<-data.frame()
+for(i in 1:nrow(`Fallecidos y Lesionados 2014`)){
+  x<-as.data.frame(`Fallecidos y Lesionados 2014`)
+  
+  y<-data.frame(x$corre_base[i],x$día_ocu[i],x$mes_ocu[i],"2014",x$hora_ocu[i],x$día_sem_ocu[i],x$edad_víc[i],x$sexo_víc[i],x$depto_ocu[i],x$mupio_ocu[i],x$zona_ocu[i],x$área_geo_ocu[i],
+                x$tipo_veh[i],x$marca_veh[i],x$color_veh[i],x$modelo_veh[i],
+                x$tipo_eve[i],x$fall_les[i],NA)
+  FL14<-rbind(FL14,y)
+}
+names(FL14)<-nms
+
+# Fallecidos y Lesionados 2015
+FL15<-data.frame()
+for(i in 1:nrow(`Fallecidos y Lesionados 2015`)){
+  x<-as.data.frame(`Fallecidos y Lesionados 2015`)
+  
+  y<-data.frame(x$núm_corre[i],x$día_ocu[i],x$mes_ocu[i],x$año_ocu[i],x$hora_ocu[i],x$día_sem_ocu[i],x$edad_per[i],x$sexo_per[i],x$depto_ocu[i],x$mupio_ocu[i],x$zona_ocu[i],x$área_geo_ocu[i],
+                x$tipo_veh[i],x$marca_veh[i],x$color_veh[i],x$modelo_veh[i],
+                x$tipo_eve[i],x$fall_les[i],x$int_o_noint[i])
+  FL15<-rbind(FL15,y)
+}
+names(FL15)<-nms
+
+
+# Fallecidos y Lesionados 2016
+FL16<-data.frame()
+for(i in 1:nrow(`Fallecidos y Lesionados 2016`)){
+  x<-as.data.frame(`Fallecidos y Lesionados 2016`)
+  
+  y<-data.frame(x$núm_corre[i],x$día_ocu[i],x$mes_ocu[i],x$año_ocu[i],x$hora_ocu[i],x$día_sem_ocu[i],x$edad_per[i],x$sexo_per[i],x$depto_ocu[i],x$mupio_ocu[i],x$zona_ocu[i],x$área_geo_ocu[i],
+                x$tipo_veh[i],x$marca_veh[i],x$color_veh[i],x$modelo_veh[i],
+                x$tipo_eve[i],x$fall_les[i],x$int_o_noint[i])
+  FL16<-rbind(FL16,y)
+}
+names(FL16)<-nms
+
+# Fallecidos y Lesionados 2017
+FL17<-data.frame()
+for(i in 1:nrow(`Fallecidos y Lesionados 2017`)){
+  x<-as.data.frame(`Fallecidos y Lesionados 2017`)
+  
+  y<-data.frame(x$núm_corre[i],x$día_ocu[i],x$mes_ocu[i],x$año_ocu[i],x$hora_ocu[i],x$día_sem_ocu[i],x$edad_per[i],x$sexo_per[i],x$depto_ocu[i],x$mupio_ocu[i],x$zona_ocu[i],NA,
+                x$tipo_veh[i],x$marca_veh[i],x$color_veh[i],x$modelo_veh[i],
+                x$tipo_eve[i],x$fall_les[i],x$int_o_noint[i])
+  FL17<-rbind(FL17,y)
+}
+names(FL17)<-nms
+
+
+# Unión
+FL<-rbind(FL09,FL10,FL11,FL12,FL13,FL14,FL15,FL16,FL17)
+```
+
+###Cambios en hechos de tránsito
+#####Renombrar bases de datos por año por facilidad
+```{r, echo=TRUE}
+hechos09<-`Hechos de Transito 2009`
+hechos10<-`Hechos de Transito 2010`
+hechos11<-`Hechos de Transito 2011`
+hechos12<-`Hechos de Transito 2012`
+hechos13<-`Hechos de Transito 2013`
+hechos14<-`Hechos de Transito 2014`
+hechos15<-`Hechos de Transito 2015.`
+hechos16<-`Hechos de Transito 2016.`
+hechos17<-`Hechos de Transito 2017.`
+```
+
+#####Renombrar variables en bases de datos de cada año para poder unirlas facilmente
+```{r, echo=TRUE}
+#2014, 2015, 2016 -> cambiar num_corre a num_hecho
+names(hechos14)[names(hechos14) == "num_correlativo"] <- "num_hecho"
+names(hechos15)[names(hechos15) == "núm_corre"] <- "num_hecho"
+names(hechos16)[names(hechos16) == "núm_corre"] <- "num_hecho"
+names(hechos17)[names(hechos17) == "núm_corre"] <- "num_hecho"
+
+#2014:2017 -> quitar tildes de día_ocu y día_sem_ocu
+names(hechos14)[names(hechos14) == "día_ocu"] <- "dia_ocu"
+names(hechos15)[names(hechos15) == "día_ocu"] <- "dia_ocu"
+names(hechos16)[names(hechos16) == "día_ocu"] <- "dia_ocu"
+names(hechos17)[names(hechos17) == "día_ocu"] <- "dia_ocu"
+names(hechos14)[names(hechos14) == "día_sem_ocu"] <- "dia_sem_ocu"
+names(hechos15)[names(hechos15) == "día_sem_ocu"] <- "dia_sem_ocu"
+names(hechos16)[names(hechos16) == "día_sem_ocu"] <- "dia_sem_ocu"
+names(hechos17)[names(hechos17) == "día_sem_ocu"] <- "dia_sem_ocu"
+
+#2014-2016 -> cambiar area_geo_ocu a areag_ocu
+names(hechos14)[names(hechos14) == "área_geo_ocu"] <- "areag_ocu"
+names(hechos15)[names(hechos15) == "área_geo_ocu"] <- "areag_ocu"
+names(hechos16)[names(hechos16) == "área_geo_ocu"] <- "areag_ocu"
+
+#2014 -> cambiar sexo_con, sexo_per y edad_con, edad_per a sexo_pil y edad_pil
+names(hechos14)[names(hechos14) == "sexo_con"] <- "sexo_pil"
+names(hechos15)[names(hechos15) == "sexo_per"] <- "sexo_pil"
+names(hechos14)[names(hechos14) == "edad_con"] <- "edad_pil"
+names(hechos15)[names(hechos15) == "edad_per"] <- "edad_pil"
+
+#2009, 2011, 2012 -> cambiar g_edad_pil, edad_m1, edad_ m1 a mayor_menor
+names(hechos09)[names(hechos09) == "g_edad_pil"] <- "mayor_menor"
+names(hechos11)[names(hechos11) == "edad_m1"] <- "mayor_menor"
+names(hechos12)[names(hechos12) == "edad_m1"] <- "mayor_menor"
+
+#2012, 2014, 2015 -> cambiar a estado_pil
+names(hechos12)[names(hechos12) == "condicion_pil"] <- "estado_pil"
+names(hechos14)[names(hechos14) == "estado_con"] <- "estado_pil"
+names(hechos15)[names(hechos15) == "estado_con"] <- "estado_pil"
+
+#2009-2012 -> cambiar a tipo_veh
+names(hechos09)[names(hechos09) == "tipo_vehi"] <- "tipo_veh"
+names(hechos10)[names(hechos10) == "tipo_v"] <- "tipo_veh"
+names(hechos11)[names(hechos11) == "tipo_vehiculo"] <- "tipo_veh"
+names(hechos12)[names(hechos12) == "tipo_vehi"] <- "tipo_veh"
+
+#2011 -> cambiar marca_vehi a marca_veh
+names(hechos11)[names(hechos11) == "marca_vehi"] <- "marca_veh"
+
+#2009-2012 -> cambiar a color_veh
+names(hechos09)[names(hechos09) == "color_vehi"] <- "color_veh"
+names(hechos10)[names(hechos10) == "color_v"] <- "color_veh"
+names(hechos11)[names(hechos11) == "color_vehi"] <- "color_veh"
+names(hechos12)[names(hechos12) == "color_vehi"] <- "color_veh"
+
+#2009, 2010, 2011 -> cambiar a modelo_veh
+names(hechos09)[names(hechos09) == "modelo_vehi"] <- "modelo_veh"
+names(hechos10)[names(hechos10) == "modelo_v"] <- "modelo_veh"
+names(hechos11)[names(hechos11) == "modelo_vehi"] <- "modelo_veh"
+
+#2010, 2014, 2015, 2016, 2017 -> cambiar a causa_acc
+names(hechos10)[names(hechos10) == "causa_ac"] <- "causa_acc"
+names(hechos14)[names(hechos14) == "tipo_eve"] <- "causa_acc"
+names(hechos15)[names(hechos15) == "tipo_eve"] <- "causa_acc"
+names(hechos16)[names(hechos16) == "tipo_eve"] <- "causa_acc"
+names(hechos17)[names(hechos17) == "tipo_eve"] <- "causa_acc"
+```
+
+
+#####Borrar información necesaria
+```{r, echo=TRUE}
+#2011 -> Borrar info de municipio. No está en diccionario ni es congruente con otros años
+hechos11$muni_ocu <- NULL
+
+#2011-2015 -> borrar variables de agrupaciones de edad para generar otra entera más adelante.
+hechos11$g_edad_pil <- NULL
+hechos12$g_edad <- NULL
+hechos13$g_edad_2 <- NULL
+hechos14$g_edad <- NULL
+hechos15$g_edad_60ymás <- NULL
+hechos15$g_edad_80ymás <- NULL
+```
+
+#####Agregar rubros necesarios y unir bases de datos por año
+```{r, echo = TRUE}
+
+#2009, 2010, 2011, 2012, 2013, 2014 -> agregar año_ocu
+hechos09$año_ocu<-rep(2009, nrow(hechos09))
+hechos10$año_ocu<-rep(2010, nrow(hechos10))
+hechos11$año_ocu<-rep(2011, nrow(hechos11))
+hechos12$año_ocu<-rep(2012, nrow(hechos12))
+hechos13$año_ocu<-rep(2013, nrow(hechos13))
+hechos14$año_ocu<-rep(2014, nrow(hechos14))
+
+#2010 -> agregar mayor_menor
+mayor_menor10<-matrix(data=NA, nrow=nrow(hechos10), ncol=1)
+for (i in c(1:nrow(hechos10))){
+  if(hechos10$edad_pil[i]<18) {mayor_menor10[i] <- 2} 
+  else {
+    if(hechos10$edad_pil[i]==999) {mayor_menor10[i] <- 9} 
+    else {mayor_menor10[i] <- 1}
+  }
+}
+hechos10$mayor_menor<-as.vector(mayor_menor10)
+
+#Unir los data frames del año 2009 al año 2012. Las columnas se unen por medio de nombres iguales y en donde no hbían variables se hacen NAs.
+hechos09_10<-merge(hechos09, hechos10, all = TRUE)
+hechos09_11<-merge(hechos09_10, hechos11, all = TRUE)
+hechos09_12<-merge(hechos09_11, hechos12, all = TRUE)
+
+#2009:2012 -> agregar g_hora
+g_hora_912<-matrix(data=NA, nrow=nrow(hechos09_12), ncol=1)
+for (j in c(1:nrow(hechos09_12))){
+  if (is.na(hechos09_12$hora_ocu[j])==TRUE){hechos09_12$hora_ocu[j]<-99}
+  if(hechos09_12$hora_ocu[j]<= 5) {g_hora_912[j] <- 1}
+  else {
+    if(hechos09_12$hora_ocu[j]<=11) {g_hora_912[j] <- 2}
+    else {
+      if(hechos09_12$hora_ocu[j]<=17) {g_hora_912[j] <- 3}
+      else {
+        if (hechos09_12$hora_ocu[j]<=23) {g_hora_912[j] <- 4}  
+        else {g_hora_912[j] <- NA}
+      }
+    }
+  }
+}
+hechos09_12$g_hora<-as.vector(g_hora_912)
+
+#Se unen los data frames 13 y 14 al data frame del 09 al 12.
+hechos09_13<-merge(hechos09_12, hechos13, all = TRUE)
+hechos09_14<-merge(hechos09_13, hechos14, all = TRUE)
+
+
+#2009:2014 -> agregar g_modelo
+g_modelo_914<-matrix(data=NA, nrow=nrow(hechos09_14), ncol=1)
+for (k in c(1:nrow(hechos09_14))){
+  if (is.na(hechos09_14$modelo_veh[k])==TRUE){hechos09_14$modelo_veh[k]<-9999}
+  if(hechos09_14$modelo_veh[k]< 1970) {g_modelo_914[k] <- 6}
+  else {
+    if(hechos09_14$modelo_veh[k]< 1980) {g_modelo_914[k] <- 1}
+    else {
+      if(hechos09_14$modelo_veh[k]< 1990) {g_modelo_914[k] <- 2}
+      else {
+        if (hechos09_14$modelo_veh[k]< 2000) {g_modelo_914[k] <- 3}  
+        else {
+          if(hechos09_14$modelo_veh[k]< 2010) {g_modelo_914[k] <- 4}
+          else{
+            if(hechos09_14$modelo_veh[k]< 2020) {g_modelo_914[k] <- 5}
+            else {g_modelo_914[k] <- 6}
+          }
+        }
+      }
+    }
+  }
+}
+hechos09_14$g_modelo_veh<-as.vector(g_modelo_914)
+
+#Se une los datos del 2015 al conjunto del 2009 hasta el 2014.
+hechos09_15<-merge(hechos09_14, hechos15, all = TRUE)
+
+#2009:2015 -> agregar g_edad_pil. Estos grupos son más completos ya que se basan en la plantilla del año 2015 donde hay en intervalos de 5 años hasta 80 años.
+g_edad_915<-matrix(data=NA, nrow=nrow(hechos09_15), ncol=1)
+for (l in c(1:nrow(hechos09_15))){
+  if (is.na(hechos09_15$edad_pil[l])==TRUE){hechos09_15$edad_pil[l]<-999}
+  if(hechos09_15$edad_pil[l]==999) {g_edad_915[l] <- 16}
+  else{
+    if(hechos09_15$edad_pil[l]< 15) {g_edad_915[l] <- 1}
+    else {
+      if(hechos09_15$edad_pil[l]< 20) {g_edad_915[l] <- 2}
+      else {
+        if(hechos09_15$edad_pil[l]< 25) {g_edad_915[l] <- 3}
+        else {
+          if (hechos09_15$edad_pil[l]< 30) {g_edad_915[l] <- 4} 
+          else {
+            if(hechos09_15$edad_pil[l]< 35) {g_edad_915[l] <- 5}
+            else{
+              if(hechos09_15$edad_pil[l]< 40) {g_edad_915[l] <- 6}
+              else{
+                if(hechos09_15$edad_pil[l]< 45) {g_edad_915[l] <- 7}
+                else{
+                  if(hechos09_15$edad_pil[l]< 50) {g_edad_915[l] <- 8}
+                  else{
+                    if(hechos09_15$edad_pil[l]< 55) {g_edad_915[l] <- 9}
+                    else{
+                      if(hechos09_15$edad_pil[l]< 60) {g_edad_915[l] <- 10}
+                      else{
+                        if(hechos09_15$edad_pil[l]< 65) {g_edad_915[l] <- 11}
+                        else{
+                          if(hechos09_15$edad_pil[l]< 70) {g_edad_915[l] <- 12}
+                          else{
+                            if(hechos09_15$edad_pil[l]< 75) {g_edad_915[l] <- 13}
+                            else{
+                              if(hechos09_15$edad_pil[l]< 80) {g_edad_915[l] <- 14}
+                              else{g_edad_915[l] <- 15}
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+hechos09_15$g_edad<-as.vector(g_edad_915)
+
+#Se une los datos del 2016 y el 2017 al conjunto de todos los otros años
+hechos09_16<-merge(hechos09_15, hechos16, all = TRUE)
+hechos09_17<-merge(hechos09_16, hechos17, all = TRUE)
+```
+
+
+###Dataframe
+```{r, echo = TRUE}
+Hechos<-hechos09_17
+```
